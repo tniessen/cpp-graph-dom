@@ -636,7 +636,7 @@ int main(int argc, char**) {
   assert(argc == 1);
   unsigned int test_count = 0;
 
-#define TEST(func) \
+#define TEST(func)                                                          \
   static_assert(std::is_same_v<decltype(func), void()>);                    \
   do {                                                                      \
     std::cout                                                               \
