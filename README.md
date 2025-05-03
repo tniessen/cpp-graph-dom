@@ -1,7 +1,7 @@
 # cpp-graph-dom
 
-This is a tiny, header-only C++20 implementation of the dominator tree algorithm
-by Lengauer and Tarjan as described in
+This is a tiny, header-only C++20 implementation of the [dominator tree](https://en.wikipedia.org/wiki/Dominator_(graph_theory))
+algorithm by Lengauer and Tarjan as described in
 ["A Fast Algorithm for Finding Dominators in a Flowgraph" (1979)](https://doi.org/10.1145/357062.357071).
 
 This library intentionally does not provide an implementation of directed
