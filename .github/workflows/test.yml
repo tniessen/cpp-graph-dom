@@ -1,0 +1,19 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        cxx: [g++, clang++]
+        mode: [debug, opt]
+        sanitizer: [none, address, undefined]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v4
+    - name: Compile with ${{ matrix.cxx }} and run tests
+      run: make -C test CXX=${{ matrix.cxx }} DEBUG=${{ (matrix.mode == 'debug' && '1') || '' }} SANITIZER=${{ (matrix.sanitizer != 'none' && matrix.sanitizer) || '' }}
