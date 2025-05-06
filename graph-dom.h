@@ -19,7 +19,7 @@ namespace graph_dom {
 // Graph nodes must be hashable objects because they are used as keys of an
 // unordered map internally.
 template <typename N>
-concept is_node_type = std::is_object_v<N> && requires (N v) {
+concept graph_node = std::is_object_v<N> && requires (N v) {
   { std::hash<N>{}(v) } -> std::convertible_to<std::size_t>;
 };
 
@@ -27,13 +27,13 @@ concept is_node_type = std::is_object_v<N> && requires (N v) {
 template <typename G>
 concept graph = requires (const G& g, typename G::node_type node) {
   typename G::node_type;
-  requires is_node_type<typename G::node_type>;
+  requires graph_node<typename G::node_type>;
   { g.root() } -> std::convertible_to<typename G::node_type>;
   { g.succ(node) } -> std::ranges::range;
   requires std::is_convertible_v<std::ranges::range_value_t<decltype(g.succ(node))>, typename G::node_type>;
 };
 
-template <is_node_type N, typename S>
+template <graph_node N, typename S>
 class graph_adaptor {
 public:
   using node_type = N;
@@ -55,15 +55,17 @@ private:
 // (1979), see https://doi.org/10.1145/357062.357071.
 //
 // Currently, only the _simple_ version of the algorithm is implemented.
-template <graph G>
+template <graph_node N>
 class dominator_tree {
 public:
   // Type of const references to graph nodes.
-  using node_ref_type = const typename G::node_type&;
+  using node_ref_type = const N&;
   // Type of const pointers to graph nodes, potentially nullptr.
-  using maybe_node_type = const typename G::node_type*;
+  using maybe_node_type = const N*;
 
   // Compute the dominator tree of the given directed graph.
+  template <graph G>
+  requires std::same_as<typename G::node_type, N>
   explicit dominator_tree(const G& g) {
     // Step 1.
     depth_first_search(g, g.root());
@@ -188,7 +190,7 @@ private:
   };
 
   struct vertex_data {
-    G::node_type vertex;
+    N vertex;
     maybe_idx semi;
     maybe_idx label;
     maybe_idx parent;
@@ -197,11 +199,13 @@ private:
     std::unordered_set<size_t> bucket;
     maybe_idx dom;
 
-    explicit vertex_data(G::node_type v, size_t i)
+    explicit vertex_data(N v, size_t i)
         : vertex(std::move(v)), semi(i), label(i) {}
   };
 
-  size_t depth_first_search(const G& g, typename G::node_type v_node) {
+  template <graph G>
+  requires std::same_as<typename G::node_type, N>
+  size_t depth_first_search(const G& g, N v_node) {
     const size_t v_index = v_.size();
     v_.emplace_back(v_node, v_index);
     GRAPH_DOM_ASSERT(!inv_v_.contains(v_node));
@@ -245,7 +249,11 @@ private:
   }
 
   std::vector<vertex_data> v_;
-  std::unordered_map<typename G::node_type, size_t> inv_v_;
+  std::unordered_map<N, size_t> inv_v_;
 };
+
+// Deduction guide for the dominator_tree constructor.
+template <graph G>
+dominator_tree(const G& g) -> dominator_tree<typename G::node_type>;
 
 }  // namespace graph_dom
