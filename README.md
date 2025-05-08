@@ -6,5 +6,5 @@ algorithm by Lengauer and Tarjan as described in
 
 This library intentionally does not provide an implementation of directed
 graphs. Any data structure that satisfies the concept `graph_dom::graph` can be
-used. Graphs can also be created using `graph_dom::graph_adaptor`. Please refer
-to test cases for examples.
+used. Alternatively, the `dominator_tree()` constructor can be given an entry
+node and an object that satisfies the concept `graph_dom::successor_function`.

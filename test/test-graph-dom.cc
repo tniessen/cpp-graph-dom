@@ -283,7 +283,8 @@ static void test_lengauer_tarjan_1979_unordered() {
 }
 
 static void test_lengauer_tarjan_1979_ordered() {
-  graph_dom::graph_adaptor graph('R', [](char c) -> std::string_view {
+  char root = 'R';
+  auto succ = [](char c) -> std::string_view {
     switch (c) {
       case 'R': return "CBA";
       case 'A': return "D";
@@ -300,12 +301,10 @@ static void test_lengauer_tarjan_1979_ordered() {
       case 'L': return "H";
       default: assert(false);
     }
-  });
-  static_assert(graph_dom::graph<decltype(graph)>);
-  static_assert(std::is_same_v<typename decltype(graph)::node_type, char>);
-  assert(graph.root() == 'R');
+  };
+  static_assert(graph_dom::successor_function<char, decltype(succ)>);
 
-  graph_dom::dominator_tree dom_tree(graph);
+  graph_dom::dominator_tree dom_tree(root, succ);
   assert(dom_tree.dfs_parent('R') == nullptr);
   assert(*dom_tree.dfs_parent('C') == 'R');
   assert(*dom_tree.dfs_parent('F') == 'C');
@@ -602,7 +601,7 @@ static void test_complex_graph() {
 }
 
 static void test_complex_graph_using_graph_adaptor() {
-  graph_dom::graph_adaptor complex('A', [](char c) -> std::string_view {
+  graph_dom::dominator_tree dom_tree('A', [](char c) -> std::string_view {
     switch (c) {
       case 'A': return "B";
       case 'B': return "C";
@@ -619,7 +618,6 @@ static void test_complex_graph_using_graph_adaptor() {
     }
   });
 
-  graph_dom::dominator_tree dom_tree(complex);
   assert(dom_tree.immediate_dominator('A') == nullptr);
   assert(*dom_tree.immediate_dominator('B') == 'A');
   assert(*dom_tree.immediate_dominator('C') == 'B');
@@ -710,7 +708,7 @@ static void test_agrawal_1994() {
     }
   }
 
-  graph_dom::post_dominator_tree post_dom_tree(dom_tree, T{14});
+  graph_dom::post_dominator_tree post_dom_tree(dom_tree, static_cast<T>(14));
   assert(post_dom_tree.root() == 14);
   assert(*post_dom_tree.immediate_post_dominator(1) == 2);
   assert(*post_dom_tree.immediate_post_dominator(2) == 14);

@@ -23,6 +23,12 @@ concept graph_node = std::is_object_v<N> && requires (N v) {
   { std::hash<N>{}(v) } -> std::convertible_to<std::size_t>;
 };
 
+template <typename N, typename S>
+concept successor_function = graph_node<N> && requires (S& s, const N& node) {
+  { s(node) } -> std::ranges::range;
+  requires std::is_convertible_v<std::ranges::range_value_t<decltype(s(node))>, decltype(node)>;
+};
+
 // Abstraction of arbitrary directed graphs.
 template <typename G>
 concept graph = requires (const G& g, typename G::node_type node) {
@@ -31,23 +37,6 @@ concept graph = requires (const G& g, typename G::node_type node) {
   { g.root() } -> std::convertible_to<typename G::node_type>;
   { g.succ(node) } -> std::ranges::range;
   requires std::is_convertible_v<std::ranges::range_value_t<decltype(g.succ(node))>, typename G::node_type>;
-};
-
-template <graph_node N, typename S>
-class graph_adaptor {
-public:
-  using node_type = N;
-
-  explicit graph_adaptor(node_type&& root, S&& succ)
-      : root_(std::move(root)), succ_(std::move(succ)) {}
-
-  [[nodiscard]] const node_type& root() const { return root_; }
-
-  [[nodiscard]] auto succ(const node_type& node) const { return succ_(node); }
-
-private:
-  node_type root_;
-  S succ_;
 };
 
 template <graph_node N>
@@ -69,9 +58,15 @@ public:
   // Compute the dominator tree of the given directed graph.
   template <graph G>
   requires std::same_as<typename G::node_type, N>
-  explicit dominator_tree(const G& g) {
+  explicit dominator_tree(const G& g)
+      : dominator_tree(g.root(), [&g](const N& n) { return g.succ(n); }) {}
+
+  // Compute the dominator tree of the given directed graph.
+  template <typename S>
+  requires successor_function<N, S>
+  explicit dominator_tree(const N& root, S&& succ) {
     // Step 1.
-    depth_first_search(g, g.root());
+    depth_first_search(root, std::forward<S&>(succ));
 
     for (size_t w = v_.size() - 1; w >= 1; w--) {
       // Step 2.
@@ -206,19 +201,19 @@ private:
         : vertex(std::move(v)), semi(i), label(i) {}
   };
 
-  template <graph G>
-  requires std::same_as<typename G::node_type, N>
-  size_t depth_first_search(const G& g, N v_node) {
+  template <typename S>
+  requires successor_function<N, S>
+  size_t depth_first_search(N v_node, S& succ) {
     const size_t v_index = v_.size();
     v_.emplace_back(v_node, v_index);
     GRAPH_DOM_ASSERT(!inv_v_.contains(v_node));
     inv_v_.emplace(v_node, v_index);
-    for (const auto& w : g.succ(v_node)) {
+    for (const auto& w : succ(v_node)) {
       size_t w_index;
       if (const auto w_it = inv_v_.find(w); w_it != inv_v_.end()) {
         w_index = w_it->second;
       } else {
-        w_index = depth_first_search(g, w);
+        w_index = depth_first_search(w, succ);
         v_[w_index].parent = v_index;
       }
       v_[w_index].pred.insert(v_index);
@@ -273,7 +268,7 @@ public:
   // The given dominator tree must contain the exit node of the graph, which is
   // the root of the post-dominator tree.
   explicit post_dominator_tree(const dominator_tree<N>& dom_tree, N&& exit)
-      : dom_tree_(compute_reverse_tree(dom_tree, std::move(exit))) {}
+      : dom_tree_(compute_reverse_tree(dom_tree, std::forward<const N&>(exit))) {}
 
   // The root node of the post-dominator tree (i.e., the exit node of the graph).
   [[nodiscard]] node_ref_type root() const { return dom_tree_.root(); }
@@ -320,14 +315,13 @@ public:
 
 private:
   static inline dominator_tree<N> compute_reverse_tree(
-      const dominator_tree<N>& dom_tree, N&& exit) {
+      const dominator_tree<N>& dom_tree, const N& exit) {
     GRAPH_DOM_ASSERT(dom_tree.contains(exit));
-    graph_adaptor rev(std::move(exit), [&dom_tree](node_ref_type node) {
+    return dominator_tree<N>(exit, [&dom_tree](node_ref_type node) {
       size_t index = dom_tree.inv_v_.at(node);
       return dom_tree.v_[index].pred | std::views::transform(
           [&dom_tree](size_t i) { return std::cref(dom_tree.v_[i].vertex); });
     });
-    return dominator_tree<N>(rev);
   }
 
   dominator_tree<N> dom_tree_;
