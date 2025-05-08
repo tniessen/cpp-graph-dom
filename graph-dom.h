@@ -50,6 +50,9 @@ private:
   S succ_;
 };
 
+template <graph_node N>
+class post_dominator_tree;
+
 // Dominator tree implementation based on the algorithm by Lengauer and Tarjan
 // as described in "A Fast Algorithm for Finding Dominators in a Flowgraph"
 // (1979), see https://doi.org/10.1145/357062.357071.
@@ -250,10 +253,91 @@ private:
 
   std::vector<vertex_data> v_;
   std::unordered_map<N, size_t> inv_v_;
+
+  friend class post_dominator_tree<N>;
 };
 
 // Deduction guide for the dominator_tree constructor.
 template <graph G>
 dominator_tree(const G& g) -> dominator_tree<typename G::node_type>;
+
+// Post-dominator tree.
+template <graph_node N>
+class post_dominator_tree {
+public:
+  using node_ref_type = const N&;
+  using maybe_node_type = const N*;
+
+  // Compute the post-dominator tree from the given dominator tree by reusing
+  // some of the information gathered during the dominator tree construction.
+  // The given dominator tree must contain the exit node of the graph, which is
+  // the root of the post-dominator tree.
+  explicit post_dominator_tree(const dominator_tree<N>& dom_tree, N&& exit)
+      : dom_tree_(compute_reverse_tree(dom_tree, std::move(exit))) {}
+
+  // The root node of the post-dominator tree (i.e., the exit node of the graph).
+  [[nodiscard]] node_ref_type root() const { return dom_tree_.root(); }
+
+  // Returns whether the given node was reachable from the exit node and thus
+  // is part of the post-dominator tree.
+  [[nodiscard]] bool contains(node_ref_type node) const {
+    return dom_tree_.contains(node);
+  }
+
+  // Returns the parent of the given node during the depth-first search
+  // traversal of the graph. This is not the same as the immediate
+  // post-dominator.
+  [[nodiscard]] maybe_node_type dfs_parent(node_ref_type node) const {
+    return dom_tree_.dfs_parent(node);
+  }
+
+  // Returns the immediate post-dominator of the given node. If the given node
+  // is the exit node, or if it was not reachable from the exit node, then this
+  // will return nullptr.
+  [[nodiscard]] maybe_node_type immediate_post_dominator(node_ref_type node) const {
+    return dom_tree_.immediate_dominator(node);
+  }
+
+  // Returns whether the given node A post-dominates the given node B.
+  //
+  // If neither node was reachable from the root node, then this will return
+  // false regardless of whether a would post-dominate b in any other case. That
+  // includes the case in which a is equal to b.
+  [[nodiscard]]
+  bool post_dominates(node_ref_type a, node_ref_type b, bool strict = false) const {
+    return dom_tree_.dominates(a, b, strict);
+  }
+
+  // Returns whether the given node A strictly post-dominates the given node B.
+  //
+  // If neither node was reachable from the root node, then this will return
+  // false regardless of whether a would strictly post-dominate b in any other
+  // case.
+  [[nodiscard]]
+  inline bool strictly_post_dominates(node_ref_type a, node_ref_type b) const {
+    return post_dominates(a, b, true);
+  }
+
+private:
+  static inline dominator_tree<N> compute_reverse_tree(
+      const dominator_tree<N>& dom_tree, N&& exit) {
+    GRAPH_DOM_ASSERT(dom_tree.contains(exit));
+    graph_adaptor rev(std::move(exit), [&dom_tree](node_ref_type node) {
+      size_t index = dom_tree.inv_v_.at(node);
+      return dom_tree.v_[index].pred | std::views::transform(
+          [&dom_tree](size_t i) { return std::cref(dom_tree.v_[i].vertex); });
+    });
+    return dominator_tree<N>(rev);
+  }
+
+  dominator_tree<N> dom_tree_;
+};
+
+// Deduction guide for the post_dominator_tree constructor for the case where
+// the exit node is a non-const pointer but N is a const pointer.
+template <graph_node N>
+post_dominator_tree(const dominator_tree<N>& dom_tree,
+                    std::remove_const_t<std::remove_pointer_t<N>>*&& exit)
+    -> post_dominator_tree<N>;
 
 }  // namespace graph_dom

@@ -359,6 +359,20 @@ static void test_cfg_loop() {
   assert(loop_dom.immediate_dominator(&unreachable) == nullptr);
   assert(loop_dom.dfs_parent(&unreachable) == nullptr);
   assert(!loop_dom.contains(&unreachable));
+
+  graph_dom::post_dominator_tree post_dom(loop_dom, &exit);
+  assert(post_dom.root() == &exit);
+  assert(post_dom.dfs_parent(&exit) == nullptr);
+
+  assert(post_dom.immediate_post_dominator(&exit) == nullptr);
+  assert(*post_dom.immediate_post_dominator(&loop_head) == &exit);
+  assert(*post_dom.immediate_post_dominator(&loop_body) == &loop_head);
+  assert(*post_dom.immediate_post_dominator(&init) == &loop_head);
+  assert(post_dom.immediate_post_dominator(&unreachable) == nullptr);
+
+  assert(post_dom.strictly_post_dominates(&loop_head, &loop_body));
+  assert(post_dom.strictly_post_dominates(&loop_head, &init));
+  assert(!post_dom.post_dominates(&loop_body, &init));
 }
 
 static void test_cfg_if_then_else() {
@@ -380,6 +394,15 @@ static void test_cfg_if_then_else() {
   assert(*if_else_dom.immediate_dominator(&exit) == &merge);
 
   assert(!if_else_dom.contains(nullptr));
+
+  graph_dom::post_dominator_tree post_dom(if_else_dom, &exit);
+  assert(post_dom.root() == &exit);
+  assert(post_dom.immediate_post_dominator(&exit) == nullptr);
+  assert(*post_dom.immediate_post_dominator(&merge) == &exit);
+  assert(*post_dom.immediate_post_dominator(&then_branch) == &merge);
+  assert(*post_dom.immediate_post_dominator(&else_branch) == &merge);
+  assert(*post_dom.immediate_post_dominator(&cond) == &merge);
+  assert(*post_dom.immediate_post_dominator(&init) == &cond);
 }
 
 static void test_cfg_self_loop() {
@@ -629,6 +652,93 @@ static void test_dead_ends() {
   assert(*dom_tree.immediate_dominator('G') == 'C');
 }
 
+// Example from "Dominators, super blocks, and program coverage" by Hiralal
+// Agrawal, 1994.
+template <std::unsigned_integral T>
+static void test_agrawal_1994() {
+  edge_set_graph<T> graph(1, {
+      {1, 2},
+      {2, 3},
+      {2, 14},
+      {3, 4},
+      {3, 5},
+      {3, 8},
+      {4, 13},
+      {5, 6},
+      {6, 7},
+      {6, 8},
+      {7, 6},
+      {8, 9},
+      {9, 2},
+      {8, 10},
+      {10, 11},
+      {11, 10},
+      {11, 12},
+      {12, 13},
+      {13, 2}
+  });
+
+  graph_dom::dominator_tree dom_tree(graph);
+  assert(dom_tree.root() == 1);
+  assert(dom_tree.immediate_dominator(1) == nullptr);
+  assert(*dom_tree.immediate_dominator(2) == 1);
+  assert(*dom_tree.immediate_dominator(3) == 2);
+  assert(*dom_tree.immediate_dominator(4) == 3);
+  assert(*dom_tree.immediate_dominator(5) == 3);
+  assert(*dom_tree.immediate_dominator(6) == 5);
+  assert(*dom_tree.immediate_dominator(7) == 6);
+  assert(*dom_tree.immediate_dominator(8) == 3);
+  assert(*dom_tree.immediate_dominator(9) == 8);
+  assert(*dom_tree.immediate_dominator(10) == 8);
+  assert(*dom_tree.immediate_dominator(11) == 10);
+  assert(*dom_tree.immediate_dominator(12) == 11);
+  assert(*dom_tree.immediate_dominator(13) == 3);
+  assert(*dom_tree.immediate_dominator(14) == 2);
+  assert(dom_tree.immediate_dominator(15) == nullptr);
+
+  for (T i = 1; i <= 14; i++) {
+    assert(dom_tree.dominates(1, i));
+    assert(dom_tree.dominates(i, i));
+    if (i > 1) {
+      assert(dom_tree.strictly_dominates(1, i));
+      if (i > 2) {
+        assert(dom_tree.strictly_dominates(2, i));
+        if (i > 3 && i < 14) {
+          assert(dom_tree.strictly_dominates(3, i));
+        }
+      }
+    }
+  }
+
+  graph_dom::post_dominator_tree post_dom_tree(dom_tree, T{14});
+  assert(post_dom_tree.root() == 14);
+  assert(*post_dom_tree.immediate_post_dominator(1) == 2);
+  assert(*post_dom_tree.immediate_post_dominator(2) == 14);
+  assert(*post_dom_tree.immediate_post_dominator(3) == 2);
+  assert(*post_dom_tree.immediate_post_dominator(4) == 13);
+  assert(*post_dom_tree.immediate_post_dominator(5) == 6);
+  assert(*post_dom_tree.immediate_post_dominator(6) == 8);
+  assert(*post_dom_tree.immediate_post_dominator(7) == 6);
+  assert(*post_dom_tree.immediate_post_dominator(8) == 2);
+  assert(*post_dom_tree.immediate_post_dominator(9) == 2);
+  assert(*post_dom_tree.immediate_post_dominator(10) == 11);
+  assert(*post_dom_tree.immediate_post_dominator(11) == 12);
+  assert(*post_dom_tree.immediate_post_dominator(12) == 13);
+  assert(*post_dom_tree.immediate_post_dominator(13) == 2);
+  assert(post_dom_tree.immediate_post_dominator(14) == nullptr);
+
+  for (T i = 1; i <= 14; i++) {
+    assert(post_dom_tree.post_dominates(14, i));
+    assert(post_dom_tree.post_dominates(i, i));
+    if (i != 14) {
+      assert(post_dom_tree.strictly_post_dominates(14, i));
+      if (i != 2) {
+        assert(post_dom_tree.strictly_post_dominates(2, i));
+      }
+    }
+  }
+}
+
 #include <iomanip>
 #include <iostream>
 
@@ -684,6 +794,10 @@ int main(int argc, char**) {
 
   TEST(test_knakkegaard_christensen_2016_fig_1_1);
   TEST(test_knakkegaard_christensen_2016_fig_2_4);
+
+  TEST(test_agrawal_1994<size_t>);
+  TEST(test_agrawal_1994<unsigned int>);
+  TEST(test_agrawal_1994<unsigned char>);
 
   return 0;
 }
